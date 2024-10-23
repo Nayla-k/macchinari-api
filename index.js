@@ -24,7 +24,7 @@ register.registerMetric(httpRequestCounter);
 
 // Setup your database connection
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'your-postgresql-connection-string',
+    connectionString: process.env.database_url || 'your-postgresql-connection-string',
     ssl: {
         rejectUnauthorized: false, // Adjust this based on your environment
     },
