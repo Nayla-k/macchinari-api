@@ -6,14 +6,6 @@ const app = express();
 // Middleware for handling JSON data
 app.use(express.json());
 
-// Setup your database connection
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL, // Use your internal database URL here
-    ssl: {
-        rejectUnauthorized: false, // Only use for development; adjust for production
-    },
-});
-
 // Create a Registry for Prometheus
 const register = new client.Registry();
 client.collectDefaultMetrics({ register });
@@ -23,7 +15,13 @@ app.get('/metrics', async (req, res) => {
     res.set('Content-Type', register.contentType);
     res.end(await register.metrics());
 });
-
+// Setup your database connection
+const pool = new Pool({
+    connectionString: process.env.database_url, // Use your internal database URL here
+    ssl: {
+        rejectUnauthorized: false, // Only use for development; adjust for production
+    },
+});
 // Endpoint to receive machine data
 app.post('/upload', async (req, res) => {
     const { macchinario, seriale, stato } = req.body;
