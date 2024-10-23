@@ -22,7 +22,7 @@ app.post('/upload', async (req, res) => {
     try {
         const queryText = `
             INSERT INTO machine_data (macchinario, seriale, stato, timestamp)
-            VALUES ($1, $2, $3, NOW()) RETURNING *; // Return the inserted row
+            VALUES ($1, $2, $3, NOW()) RETURNING *;
         `;
         const values = [macchinario, seriale, stato]; // Values to insert
 
