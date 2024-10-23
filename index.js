@@ -8,7 +8,7 @@ app.use(express.json());
 
 // Setup your database connection
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL, // Ensure this is set correctly in your environment
+    connectionString: process.env.database_url, // Ensure this is set correctly in your environment
     ssl: {
         rejectUnauthorized: false, // Use for development; adjust for production
     },
