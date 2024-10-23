@@ -27,16 +27,16 @@ app.post('/upload', async (req, res) => {
         const values = [macchinario, seriale, stato]; // Values to insert
 
         const result = await pool.query(queryText, values); // Execute the query
-        console.log('Dati ricevuti e salvati:', result.rows[0]); // Log the saved data
+        console.log('Dati ricevuti e salvati:', result.rows[0]); 
 
         // Send response back to client
         res.json({
             message: 'Dati ricevuti e salvati con successo!',
-            data: result.rows[0], // Include saved data in the response
+            data: result.rows[0], 
         });
     } catch (error) {
         console.error('Errore durante il salvataggio dei dati:', error); // Log any errors
-        res.status(500).json({ error: 'Errore durante il salvataggio dei dati' }); // Send error response
+        res.status(500).json({ error: 'Errore durante il salvataggio dei dati' }); 
     }
 });
 
