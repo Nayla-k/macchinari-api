@@ -1,26 +1,49 @@
 // index.js
 const express = require('express');
+const { Pool } = require('pg'); // Import PostgreSQL client
 const app = express();
 
-// Middleware per gestire i dati JSON in arrivo
+// Middleware for handling JSON data
 app.use(express.json());
 
-// Endpoint per ricevere i dati dei macchinari
-app.post('/upload', (req, res) => {
-    const machineData = req.body;
-
-    // Log dei dati ricevuti dal client
-    console.log('Dati ricevuti:', machineData);
-
-    // Puoi salvare i dati in un database o restituirli come conferma
-    res.json({
-        message: 'Dati ricevuti con successo!',
-        data: machineData
-    });
+// Setup your database connection using environment variable
+const pool = new Pool({
+    connectionString: process.env.database_url, // Use the DATABASE_URL environment variable
+    ssl: {
+        rejectUnauthorized: false, // Only use for development; adjust for production
+    },
 });
 
-// Avvia il server
-const PORT = process.env.PORT || 3000;
+// Endpoint to receive machine data
+app.post('/upload', async (req, res) => {
+    const { macchinario, seriale, stato } = req.body; // Destructure data from request body
+
+    // SQL query to insert data into the database
+    try {
+        const queryText = `
+            INSERT INTO machine_data (macchinario, seriale, stato, timestamp)
+            VALUES ($1, $2, $3, NOW()) RETURNING *; // Return the inserted row
+        `;
+        const values = [macchinario, seriale, stato]; // Values to insert
+
+        const result = await pool.query(queryText, values); // Execute the query
+        console.log('Dati ricevuti e salvati:', result.rows[0]); // Log the saved data
+
+        // Send response back to client
+        res.json({
+            message: 'Dati ricevuti e salvati con successo!',
+            data: result.rows[0], // Include saved data in the response
+        });
+    } catch (error) {
+        console.error('Errore durante il salvataggio dei dati:', error); // Log any errors
+        res.status(500).json({ error: 'Errore durante il salvataggio dei dati' }); // Send error response
+    }
+});
+
+// Start the server
+const PORT = process.env.PORT || 3000; // Define the port to listen on
 app.listen(PORT, () => {
-    console.log(`Server in ascolto sulla porta ${PORT}`);
+    console.log(`Server in ascolto sulla porta ${PORT}`); // Log server start message
 });
+
+
