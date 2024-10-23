@@ -5,46 +5,58 @@ const { collectDefaultMetrics, register } = require('prom-client');
 
 const app = express();
 
-// Enable CORS
-app.use(cors());
+// Enable CORS with specific options
+app.use(cors({
+    origin: '*', // In production, you might want to restrict this
+    methods: ['POST', 'GET', 'OPTIONS'],
+    allowedHeaders: ['Content-Type']
+}));
+
 app.use(express.json());
 
-// Setup your database connection
+// Add request logging middleware
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    console.log('Headers:', req.headers);
+    if (req.method === 'POST') {
+        console.log('Body:', req.body);
+    }
+    next();
+});
+
 const pool = new Pool({
-    connectionString: process.env.database_url,
+    connectionString: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false,
     },
 });
 
-// Initialize metrics collection
 collectDefaultMetrics();
 
-// Health check endpoint
-app.get('/', (req, res) => {
-    res.send('Server is running');
-});
-
-// Metrics endpoint with error handling
 app.get('/metrics', async (req, res) => {
     try {
+        console.log('Metrics endpoint accessed');
         res.set('Content-Type', register.contentType);
         const metrics = await register.metrics();
         res.end(metrics);
     } catch (error) {
-        console.error('Error collecting metrics:', error);
+        console.error('Error serving metrics:', error);
         res.status(500).send('Error collecting metrics');
     }
 });
 
-// Endpoint to receive machine data with logging
 app.post('/upload', async (req, res) => {
-    console.log('Received upload request:', req.body);
+    console.log('Received upload request');
+    console.log('Request body:', req.body);
     
     const { macchinario, seriale, stato } = req.body;
     
     if (!macchinario || !seriale || !stato) {
-        return res.status(400).json({ error: 'Missing required fields' });
+        console.error('Missing required fields');
+        return res.status(400).json({ 
+            error: 'Missing required fields',
+            received: { macchinario, seriale, stato }
+        });
     }
 
     try {
@@ -54,23 +66,30 @@ app.post('/upload', async (req, res) => {
         `;
         const values = [macchinario, seriale, stato];
         
+        console.log('Executing query:', queryText);
+        console.log('With values:', values);
+        
         const result = await pool.query(queryText, values);
-        console.log('Data saved successfully:', result.rows[0]);
+        console.log('Query result:', result.rows[0]);
         
         res.json({
             message: 'Data received and saved successfully!',
-            data: result.rows[0],
+            data: result.rows[0]
         });
     } catch (error) {
-        console.error('Error saving data:', error);
-        res.status(500).json({ error: 'Error saving data', details: error.message });
+        console.error('Database error:', error);
+        res.status(500).json({ 
+            error: 'Error saving data', 
+            details: error.message 
+        });
     }
 });
 
-// Start the server
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on port ${PORT}`);
+    console.log('Environment:', process.env.NODE_ENV);
+    console.log('Database URL configured:', !!process.env.DATABASE_URL);
 });
 
 
