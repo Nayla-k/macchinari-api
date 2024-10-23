@@ -20,6 +20,15 @@ app.use(bodyParser.json());
 app.post('/upload', async (req, res) => {
     const { macchinario, seriale, stato, modalData } = req.body;
 
+    // Debugging logs to check incoming data
+    console.log('Incoming data:', req.body);
+
+    // Validate incoming data
+    if (!seriale || !macchinario) {
+        console.error('Missing serial number or machine type');
+        return res.status(400).json({ error: 'Missing serial number or machine type' });
+    }
+
     try {
         // Check if machine exists and insert if not
         let machineId;
@@ -41,12 +50,12 @@ app.post('/upload', async (req, res) => {
             VALUES ($1, $2, $3, $4, $5) 
             RETURNING id
         `;
-        const modalityValues = [machineId, modality_type, acquisition_date, acquisition_time, JSON.stringify(modalData)];
+        const modalityValues = [machineId, modalData.modality_type, acquisition_date, acquisition_time, JSON.stringify(modalData)];
         const modalityResult = await pool.query(modalityQuery, modalityValues);
         const modalityId = modalityResult.rows[0].id;
 
         // Depending on the modality type, insert the respective data
-        if (modality_type === 'CT') {
+        if (modalData.modality_type === 'CT') {
             const ctDataQuery = `
                 INSERT INTO ct_data (modality_id, focal_spot, xray_kv, xray_ma, xray_ms, angle_range_deg, angle_start_deg, gantry_linear_pos_mm, gantry_panel_pos_mm, ctdivol_mgy, total_dlp_mgy_cm, reconstruction_info)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -66,7 +75,7 @@ app.post('/upload', async (req, res) => {
                 modalData.reconstruction_info,
             ];
             await pool.query(ctDataQuery, ctDataValues);
-        } else if (modality_type === 'DR') {
+        } else if (modalData.modality_type === 'DR') {
             const drDataQuery = `
                 INSERT INTO dr_data (modality_id, collimator_filter, collimator_mode, focal_spot, xray_kv, xray_ma, xray_ms, gantry_linear_pos_mm, gantry_panel_pos_mm, binning, pixel_pitch_mm, raw_height, raw_width, reconstruction_info)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
@@ -101,6 +110,7 @@ app.post('/upload', async (req, res) => {
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
+
 
 
 
