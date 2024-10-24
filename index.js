@@ -64,16 +64,19 @@ app.post('/upload', async (req, res) => {
         }
 
         // Update Prometheus metrics based on incoming data
-        if (data.series_info) {
-            metrics.temperature.set({ serial_number: serialNumber, machine_type: machineType }, data.series_info.temperature || 0);
-            metrics.kV.set({ serial_number: serialNumber, machine_type: machineType }, data.series_info.kV || 0);
-        }
-        if (data.source_info) {
-            metrics.mA.set({ serial_number: serialNumber, machine_type: machineType }, data.source_info.mA || 0);
-            metrics.exposureTimeMs.set({ serial_number: serialNumber, machine_type: machineType }, data.source_info.exposure_time_ms || 0);
-        }
-        if (data.series_info && data.series_info.image_count) {
-            metrics.imageCount.set({ serial_number: serialNumber, machine_type: machineType }, data.series_info.image_count || 0);
+        if (machineType === 'CT' || machineType === 'DR') {
+            const temperature = data.series_info?.temperature || 0;  // Default to 0 if not provided
+            const kV = data.source_info?.kV || 0;
+            const mA = data.source_info?.mA || 0;
+            const exposureTimeMs = data.source_info?.exposure_time_ms || 0;
+            const imageCount = data.series_info?.image_count || 0;
+
+            // Set Prometheus metric values with labels
+            metrics.temperature.set({ serial_number: serialNumber, machine_type: machineType }, temperature);
+            metrics.kV.set({ serial_number: serialNumber, machine_type: machineType }, kV);
+            metrics.mA.set({ serial_number: serialNumber, machine_type: machineType }, mA);
+            metrics.exposureTimeMs.set({ serial_number: serialNumber, machine_type: machineType }, exposureTimeMs);
+            metrics.imageCount.set({ serial_number: serialNumber, machine_type: machineType }, imageCount);
         }
 
         const client = await pool.connect();
