@@ -1,25 +1,40 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const { Pool } = require('pg');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Enable CORS to allow requests from different origins
+app.use(cors());
 
 // PostgreSQL configuration
 const pool = new Pool({
     connectionString: process.env.database_url || 'your-postgresql-connection-string',
     ssl: {
-        rejectUnauthorized: false, // Adjust this based on your environment
+        rejectUnauthorized: false,
     },
 });
+
 // Middleware
 app.use(bodyParser.json());
 
 // Endpoint to receive machine data
 app.post('/upload', async (req, res) => {
-    const { machineType, serialNumber, status, data } = req.body;
-
     try {
+        // Log the incoming data
+        console.log('Request received with body:', req.body);
+
+        const { machineType, serialNumber, status, data } = req.body;
+
+        // Validate incoming request
+        if (!machineType || !serialNumber || !status || !data) {
+            console.log('Missing required fields');
+            return res.status(400).send('Missing required fields');
+        }
+
+        // Extract specific fields and additional info
         const {
             acquisition_date,
             acquisition_time,
@@ -44,6 +59,7 @@ app.post('/upload', async (req, res) => {
             return res.status(400).send('Invalid machine type');
         }
 
+        // Prepare the values for the query
         const values = [
             serialNumber,
             modality_type,
@@ -51,9 +67,10 @@ app.post('/upload', async (req, res) => {
             acquisition_time,
             study_uid,
             series_uid,
-            JSON.stringify(additional_info) // Convert additional_info to JSON string
+            JSON.stringify(additional_info) // Convert additional_info to JSON string for storage
         ];
 
+        // Execute the query
         await pool.query(queryText, values);
         res.status(201).send('Data successfully saved');
     } catch (error) {
