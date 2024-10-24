@@ -63,6 +63,19 @@ app.post('/upload', async (req, res) => {
             return res.status(400).send('Missing required fields');
         }
 
+        // Update Prometheus metrics based on incoming data
+        if (data.series_info) {
+            metrics.temperature.set({ serial_number: serialNumber, machine_type: machineType }, data.series_info.temperature || 0);
+            metrics.kV.set({ serial_number: serialNumber, machine_type: machineType }, data.series_info.kV || 0);
+        }
+        if (data.source_info) {
+            metrics.mA.set({ serial_number: serialNumber, machine_type: machineType }, data.source_info.mA || 0);
+            metrics.exposureTimeMs.set({ serial_number: serialNumber, machine_type: machineType }, data.source_info.exposure_time_ms || 0);
+        }
+        if (data.series_info && data.series_info.image_count) {
+            metrics.imageCount.set({ serial_number: serialNumber, machine_type: machineType }, data.series_info.image_count || 0);
+        }
+
         const client = await pool.connect();
         
         try {
