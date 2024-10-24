@@ -41,23 +41,20 @@ app.post('/upload', async (req, res) => {
     try {
         const { machineType, serialNumber, status, data } = req.body;
         
-        // Debug logging
         console.log('Received request:', { machineType, serialNumber, status });
         console.log('Data object:', data);
 
-        // Validate incoming request
         if (!machineType || !serialNumber || !status || !data) {
             console.log('Missing required fields:', { machineType, serialNumber, status, data });
             return res.status(400).send('Missing required fields');
         }
 
-        // Get a client from the pool
         const client = await pool.connect();
         
         try {
             await client.query('BEGIN');
 
-            // Insert into main table
+            // Main table insert remains the same
             const queryText = `
                 INSERT INTO vimago3030 (
                     serial_number, 
@@ -84,23 +81,103 @@ app.post('/upload', async (req, res) => {
 
             await client.query(queryText, values);
 
-            // Insert related data if it exists
+            // Modified series_info insert based on modality type
             if (data.series_info) {
-                await client.query(
-                    `INSERT INTO series_info (
-                        serial_number, series_id, temperature, kV, modality_type
-                    ) VALUES ($1, $2, $3, $4, $5)`,
-                    [
+                let seriesQueryText;
+                let seriesValues;
+
+                if (data.modality_type === 'CT') {
+                    seriesQueryText = `
+                        INSERT INTO series_info (
+                            serial_number, 
+                            series_id, 
+                            temperature, 
+                            kV, 
+                            modality_type
+                        ) VALUES ($1, $2, $3, $4, $5)
+                    `;
+                    seriesValues = [
                         serialNumber,
                         data.series_info.series_id,
                         data.series_info.temperature,
                         data.series_info.kV,
                         data.modality_type
-                    ]
-                );
+                    ];
+                } else if (data.modality_type === 'DR') {
+                    seriesQueryText = `
+                        INSERT INTO dr_series_info (
+                            serial_number,
+                            series_number,
+                            image_count,
+                            patient_id,
+                            exam_type,
+                            modality_type
+                        ) VALUES ($1, $2, $3, $4, $5, $6)
+                    `;
+                    seriesValues = [
+                        serialNumber,
+                        data.series_info.series_number,
+                        data.series_info.image_count,
+                        data.series_info.patient_id,
+                        data.series_info.exam_type,
+                        data.modality_type
+                    ];
+                }
+
+                if (seriesQueryText) {
+                    await client.query(seriesQueryText, seriesValues);
+                }
             }
 
-            // Add similar checks for other tables...
+            // Similar modifications for source_info
+            if (data.source_info) {
+                let sourceQueryText;
+                let sourceValues;
+
+                if (data.modality_type === 'CT') {
+                    sourceQueryText = `
+                        INSERT INTO source_info (
+                            serial_number, 
+                            source_type, 
+                            energy, 
+                            modality_type
+                        ) VALUES ($1, $2, $3, $4)
+                    `;
+                    sourceValues = [
+                        serialNumber,
+                        data.source_info.source_type,
+                        data.source_info.energy,
+                        data.modality_type
+                    ];
+                } else if (data.modality_type === 'DR') {
+                    sourceQueryText = `
+                        INSERT INTO dr_source_info (
+                            serial_number,
+                            source_type,
+                            kV,
+                            mA,
+                            exposure_time_ms,
+                            temperature_celsius,
+                            modality_type
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    `;
+                    sourceValues = [
+                        serialNumber,
+                        data.source_info.source_type,
+                        data.source_info.kV,
+                        data.source_info.mA,
+                        data.source_info.exposure_time_ms,
+                        data.source_info.temperature_celsius,
+                        data.modality_type
+                    ];
+                }
+
+                if (sourceQueryText) {
+                    await client.query(sourceQueryText, sourceValues);
+                }
+            }
+
+            // Add similar modifications for other tables...
 
             await client.query('COMMIT');
             res.status(201).send('Data successfully saved');
