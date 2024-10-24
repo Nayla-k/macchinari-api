@@ -500,8 +500,6 @@ app.post('/upload', async (req, res) => {
                         const insertAcquisitionText = `
                             INSERT INTO acquisition_info (
                                 serial_number, 
-                                anti_scatter_grid, 
-                                binning, 
                                 frames_per_run, 
                                 frame_rate_hz, 
                                 modality_type
@@ -509,8 +507,6 @@ app.post('/upload', async (req, res) => {
                         `;
                         await client.query(insertAcquisitionText, [
                             serialNumber,
-                            data.acquisition_info.anti_scatter_grid,
-                            data.acquisition_info.binning,
                             data.acquisition_info.frames_per_run,
                             data.acquisition_info.frame_rate_hz,
                             data.modality_type
@@ -520,8 +516,6 @@ app.post('/upload', async (req, res) => {
                         // Check for updates in acquisition_info
                         const existingAcquisitionData = existingAcquisition.rows[0];
                         const isAcquisitionUpdated = !(
-                            existingAcquisitionData.anti_scatter_grid === data.acquisition_info.anti_scatter_grid &&
-                            existingAcquisitionData.binning === data.acquisition_info.binning &&
                             existingAcquisitionData.frames_per_run === data.acquisition_info.frames_per_run &&
                             existingAcquisitionData.frame_rate_hz === data.acquisition_info.frame_rate_hz
                         );
@@ -529,15 +523,11 @@ app.post('/upload', async (req, res) => {
                         if (isAcquisitionUpdated) {
                             const updateAcquisitionText = `
                                 UPDATE acquisition_info SET 
-                                    anti_scatter_grid = $1, 
-                                    binning = $2,
                                     frames_per_run = $3,
                                     frame_rate_hz = $4 
                                 WHERE serial_number = $5
                             `;
                             await client.query(updateAcquisitionText, [
-                                data.acquisition_info.anti_scatter_grid,
-                                data.acquisition_info.binning,
                                 data.acquisition_info.frames_per_run,
                                 data.acquisition_info.frame_rate_hz,
                                 serialNumber
@@ -558,9 +548,7 @@ app.post('/upload', async (req, res) => {
                         // Insert new dr_acquisition_info
                         const insertDrAcquisitionText = `
                             INSERT INTO dr_acquisition_info (
-                                serial_number, 
-                                anti_scatter_grid, 
-                                binning, 
+                                serial_number,
                                 frames_per_run, 
                                 frame_rate_hz, 
                                 modality_type
@@ -568,8 +556,6 @@ app.post('/upload', async (req, res) => {
                         `;
                         await client.query(insertDrAcquisitionText, [
                             serialNumber,
-                            data.acquisition_info.anti_scatter_grid,
-                            data.acquisition_info.binning,
                             data.acquisition_info.frames_per_run,
                             data.acquisition_info.frame_rate_hz,
                             data.modality_type
@@ -579,8 +565,6 @@ app.post('/upload', async (req, res) => {
                         // Check for updates in dr_acquisition_info
                         const existingDrAcquisitionData = existingDrAcquisition.rows[0];
                         const isDrAcquisitionUpdated = !(
-                            existingDrAcquisitionData.anti_scatter_grid === data.acquisition_info.anti_scatter_grid &&
-                            existingDrAcquisitionData.binning === data.acquisition_info.binning &&
                             existingDrAcquisitionData.frames_per_run === data.acquisition_info.frames_per_run &&
                             existingDrAcquisitionData.frame_rate_hz === data.acquisition_info.frame_rate_hz
                         );
@@ -588,15 +572,11 @@ app.post('/upload', async (req, res) => {
                         if (isDrAcquisitionUpdated) {
                             const updateDrAcquisitionText = `
                                 UPDATE dr_acquisition_info SET 
-                                    anti_scatter_grid = $1, 
-                                    binning = $2,
                                     frames_per_run = $3,
                                     frame_rate_hz = $4 
                                 WHERE serial_number = $5
                             `;
                             await client.query(updateDrAcquisitionText, [
-                                data.acquisition_info.anti_scatter_grid,
-                                data.acquisition_info.binning,
                                 data.acquisition_info.frames_per_run,
                                 data.acquisition_info.frame_rate_hz,
                                 serialNumber
