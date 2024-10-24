@@ -17,7 +17,6 @@ const pool = new Pool({
     },
 });
 
-// Middleware
 app.use(bodyParser.json());
 
 // Endpoint to receive machine data
