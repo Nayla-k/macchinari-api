@@ -2,14 +2,16 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const { Pool } = require('pg');
 const cors = require('cors');
+const promClient = require('prom-client');
+const prometheusMiddleware = require('express-prometheus-middleware');
 require('dotenv').config(); // Add this at the top
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+app.use(bodyParser.json());
 
-// PostgreSQL configuration with better error handling
 const pool = new Pool({
     connectionString: process.env.database_url, // Changed from database_url to DATABASE_URL
     ssl: {
@@ -17,7 +19,6 @@ const pool = new Pool({
     },
 });
 
-// Test database connection on startup
 pool.connect((err, client, release) => {
     if (err) {
         console.error('Error connecting to the database:', err.stack);
@@ -34,7 +35,20 @@ pool.connect((err, client, release) => {
     }
 });
 
-app.use(bodyParser.json());
+const metrics = {
+    temperature: new promClient.Gauge({ name: 'machine_temperature', help: 'Temperature of the machine', labels: ['serial_number', 'machine_type'] }),
+    kV: new promClient.Gauge({ name: 'machine_kV', help: 'X-Ray kV', labels: ['serial_number', 'machine_type'] }),
+    mA: new promClient.Gauge({ name: 'machine_mA', help: 'X-Ray mA', labels: ['serial_number', 'machine_type'] }),
+    exposureTimeMs: new promClient.Gauge({ name: 'machine_exposure_time_ms', help: 'Exposure time in ms', labels: ['serial_number', 'machine_type'] }),
+    imageCount: new promClient.Gauge({ name: 'machine_image_count', help: 'Number of images captured', labels: ['serial_number', 'machine_type'] })
+};
+
+// Expose metrics at /metrics endpoint
+app.use(prometheusMiddleware({
+    metricsPath: '/metrics',
+    collectDefaultMetrics: {}
+}));
+
 
 // Endpoint to receive machine data
 app.post('/upload', async (req, res) => {
