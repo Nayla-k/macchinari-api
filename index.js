@@ -53,6 +53,7 @@ app.use(prometheusMiddleware({
 // Endpoint to receive machine data
 // Endpoint to receive machine data
 // Endpoint to receive machine data
+// Endpoint to receive machine data
 app.post('/upload', async (req, res) => {
     try {
         const { machineType, serialNumber, status, data } = req.body;
@@ -120,25 +121,28 @@ app.post('/upload', async (req, res) => {
                 await client.query(queryText, values);
                 console.log('Inserted new record into vimago3030.');
             } else {
-                console.log('No changes detected for main record. Data not inserted.');
+                console.log('No changes detected. Data not inserted into vimago3030.');
             }
 
-            // Handle series_info and source_info based on modality
+            // Handle series_info based on modality
             if (data.series_info) {
-                // For CT Modality
+                let seriesQueryText;
+                let seriesValues;
+
+                // Handle series_info and dr_series_info
                 if (data.modality_type === 'CT') {
-                    const seriesQueryText = `
+                    seriesQueryText = `
                         SELECT * FROM series_info WHERE serial_number = $1 AND series_id = $2
                     `;
-                    const seriesValues = [
+                    seriesValues = [
                         serialNumber,
                         data.series_info.series_id,
                     ];
 
                     const existingSeries = await client.query(seriesQueryText, seriesValues);
                     if (existingSeries.rows.length === 0) {
-                        // Insert new series_info
-                        const insertSeriesText = `
+                        // Insert new series_info since it doesn't exist
+                        seriesQueryText = `
                             INSERT INTO series_info (
                                 serial_number, 
                                 series_id, 
@@ -147,7 +151,7 @@ app.post('/upload', async (req, res) => {
                                 modality_type
                             ) VALUES ($1, $2, $3, $4, $5)
                         `;
-                        await client.query(insertSeriesText, [
+                        await client.query(seriesQueryText, [
                             serialNumber,
                             data.series_info.series_id,
                             data.series_info.temperature,
@@ -156,7 +160,7 @@ app.post('/upload', async (req, res) => {
                         ]);
                         console.log('Inserted new record into series_info.');
                     } else {
-                        // Check for updates in series_info
+                        // Check for updates
                         const existingSeriesData = existingSeries.rows[0];
                         const isSeriesUpdated = !(
                             existingSeriesData.temperature === data.series_info.temperature &&
@@ -164,13 +168,13 @@ app.post('/upload', async (req, res) => {
                         );
 
                         if (isSeriesUpdated) {
-                            const updateSeriesText = `
+                            const updateSeriesQueryText = `
                                 UPDATE series_info SET 
                                     temperature = $1, 
                                     kV = $2 
                                 WHERE serial_number = $3 AND series_id = $4
                             `;
-                            await client.query(updateSeriesText, [
+                            await client.query(updateSeriesQueryText, [
                                 data.series_info.temperature,
                                 data.series_info.kV,
                                 serialNumber,
@@ -181,22 +185,19 @@ app.post('/upload', async (req, res) => {
                             console.log('No changes detected for series_info. Data not updated.');
                         }
                     }
-                }
-
-                // For DR Modality
-                else if (data.modality_type === 'DR') {
-                    const drSeriesQueryText = `
+                } else if (data.modality_type === 'DR') {
+                    seriesQueryText = `
                         SELECT * FROM dr_series_info WHERE serial_number = $1 AND series_number = $2
                     `;
-                    const drSeriesValues = [
+                    seriesValues = [
                         serialNumber,
                         data.series_info.series_number,
                     ];
 
-                    const existingDrSeries = await client.query(drSeriesQueryText, drSeriesValues);
-                    if (existingDrSeries.rows.length === 0) {
-                        // Insert new dr_series_info
-                        const insertDrSeriesText = `
+                    const existingSeries = await client.query(seriesQueryText, seriesValues);
+                    if (existingSeries.rows.length === 0) {
+                        // Insert new dr_series_info since it doesn't exist
+                        seriesQueryText = `
                             INSERT INTO dr_series_info (
                                 serial_number,
                                 series_number,
@@ -206,7 +207,7 @@ app.post('/upload', async (req, res) => {
                                 modality_type
                             ) VALUES ($1, $2, $3, $4, $5, $6)
                         `;
-                        await client.query(insertDrSeriesText, [
+                        await client.query(seriesQueryText, [
                             serialNumber,
                             data.series_info.series_number,
                             data.series_info.image_count,
@@ -216,108 +217,82 @@ app.post('/upload', async (req, res) => {
                         ]);
                         console.log('Inserted new record into dr_series_info.');
                     } else {
-                        // Check for updates in dr_series_info
-                        const existingDrSeriesData = existingDrSeries.rows[0];
-                        const isDrSeriesUpdated = !(
-                            existingDrSeriesData.image_count === data.series_info.image_count &&
-                            existingDrSeriesData.patient_id === data.series_info.patient_id &&
-                            existingDrSeriesData.exam_type === data.series_info.exam_type
-                        );
-
-                        if (isDrSeriesUpdated) {
-                            const updateDrSeriesText = `
-                                UPDATE dr_series_info SET 
-                                    image_count = $1, 
-                                    patient_id = $2,
-                                    exam_type = $3
-                                WHERE serial_number = $4 AND series_number = $5
-                            `;
-                            await client.query(updateDrSeriesText, [
-                                data.series_info.image_count,
-                                data.series_info.patient_id,
-                                data.series_info.exam_type,
-                                serialNumber,
-                                data.series_info.series_number
-                            ]);
-                            console.log('Updated existing record in dr_series_info.');
-                        } else {
-                            console.log('No changes detected for dr_series_info. Data not updated.');
-                        }
+                        console.log('dr_series_info already exists. No changes detected.');
                     }
                 }
             }
 
-            // Handle source_info updates based on modality
+            // Handle source_info and dr_source_info
             if (data.source_info) {
-                let sourceQueryText;
-                let sourceValues;
+                let sourceQueryText = `
+                    SELECT * FROM source_info WHERE serial_number = $1 AND source_type = $2
+                `;
+                let sourceValues = [
+                    serialNumber,
+                    data.source_info.source_type,
+                ];
 
-                if (data.modality_type === 'CT') {
+                const existingSource = await client.query(sourceQueryText, sourceValues);
+                if (existingSource.rows.length === 0) {
+                    // Insert new source_info
                     sourceQueryText = `
-                        SELECT * FROM source_info WHERE serial_number = $1
+                        INSERT INTO source_info (
+                            serial_number, 
+                            source_type, 
+                            energy, 
+                            modality_type
+                        ) VALUES ($1, $2, $3, $4)
                     `;
-                    sourceValues = [serialNumber];
+                    await client.query(sourceQueryText, [
+                        serialNumber,
+                        data.source_info.source_type,
+                        data.source_info.energy,
+                        data.modality_type
+                    ]);
+                    console.log('Inserted new record into source_info.');
+                } else {
+                    const existingSourceData = existingSource.rows[0];
+                    const isSourceUpdated = !(
+                        existingSourceData.energy === data.source_info.energy
+                    );
 
-                    const existingSource = await client.query(sourceQueryText, sourceValues);
-                    if (existingSource.rows.length === 0) {
-                        // Insert new source_info
-                        const insertSourceText = `
-                            INSERT INTO source_info (
-                                serial_number, 
-                                source_type, 
-                                energy, 
-                                modality_type
-                            ) VALUES ($1, $2, $3, $4)
+                    if (isSourceUpdated) {
+                        const updateSourceText = `
+                            UPDATE source_info SET 
+                                energy = $1 
+                            WHERE serial_number = $2 AND source_type = $3
                         `;
-                        await client.query(insertSourceText, [
-                            serialNumber,
-                            data.source_info.source_type,
+                        await client.query(updateSourceText, [
                             data.source_info.energy,
-                            data.modality_type
+                            serialNumber,
+                            data.source_info.source_type
                         ]);
-                        console.log('Inserted new record into source_info.');
+                        console.log('Updated existing record in source_info.');
                     } else {
-                        // Check for updates in source_info
-                        const existingSourceData = existingSource.rows[0];
-                        const isSourceUpdated = !(
-                            existingSourceData.source_type === data.source_info.source_type &&
-                            existingSourceData.energy === data.source_info.energy
-                        );
-
-                        if (isSourceUpdated) {
-                            const updateSourceText = `
-                                UPDATE source_info SET 
-                                    source_type = $1, 
-                                    energy = $2 
-                                WHERE serial_number = $3
-                            `;
-                            await client.query(updateSourceText, [
-                                data.source_info.source_type,
-                                data.source_info.energy,
-                                serialNumber
-                            ]);
-                            console.log('Updated existing record in source_info.');
-                        } else {
-                            console.log('No changes detected for source_info. Data not updated.');
-                        }
+                        console.log('No changes detected for source_info. Data not updated.');
                     }
-                } else if (data.modality_type === 'DR') {
-                    sourceQueryText = `
-                        SELECT * FROM dr_source_info WHERE serial_number = $1
-                    `;
-                    sourceValues = [serialNumber];
+                }
 
-                    const existingDrSource = await client.query(sourceQueryText, sourceValues);
+                // Handle dr_source_info
+                if (data.modality_type === 'DR') {
+                    const drSourceQueryText = `
+                        SELECT * FROM dr_source_info WHERE serial_number = $1 AND source_type = $2
+                    `;
+                    const drSourceValues = [
+                        serialNumber,
+                        data.source_info.source_type,
+                    ];
+
+                    const existingDrSource = await client.query(drSourceQueryText, drSourceValues);
                     if (existingDrSource.rows.length === 0) {
-                        // Insert new dr_source_info
                         const insertDrSourceText = `
                             INSERT INTO dr_source_info (
-                                serial_number, 
-                                source_type, 
-                                kV, 
-                                mA, 
-                                exposure_time_ms, 
-                                temperature_celsius, 
+                                serial_number,
+                                source_type,
+                                kV,
+                                mA,
+                                exposure_time_ms,
+                                temperature_celsius,
                                 modality_type
                             ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                         `;
@@ -332,111 +307,75 @@ app.post('/upload', async (req, res) => {
                         ]);
                         console.log('Inserted new record into dr_source_info.');
                     } else {
-                        // Check for updates in dr_source_info
-                        const existingDrSourceData = existingDrSource.rows[0];
-                        const isDrSourceUpdated = !(
-                            existingDrSourceData.kV === data.source_info.kV &&
-                            existingDrSourceData.mA === data.source_info.mA &&
-                            existingDrSourceData.exposure_time_ms === data.source_info.exposure_time_ms &&
-                            existingDrSourceData.temperature_celsius === data.source_info.temperature_celsius
-                        );
-
-                        if (isDrSourceUpdated) {
-                            const updateDrSourceText = `
-                                UPDATE dr_source_info SET 
-                                    kV = $1, 
-                                    mA = $2,
-                                    exposure_time_ms = $3,
-                                    temperature_celsius = $4 
-                                WHERE serial_number = $5
-                            `;
-                            await client.query(updateDrSourceText, [
-                                data.source_info.kV,
-                                data.source_info.mA,
-                                data.source_info.exposure_time_ms,
-                                data.source_info.temperature_celsius,
-                                serialNumber
-                            ]);
-                            console.log('Updated existing record in dr_source_info.');
-                        } else {
-                            console.log('No changes detected for dr_source_info. Data not updated.');
-                        }
+                        console.log('dr_source_info already exists. No changes detected.');
                     }
                 }
             }
 
-            // Handle other _info updates (dr_system_info, dr_acquisition_info, dr_patient_info)
-            // You would follow a similar approach for these tables as well
-
+            // Handle system_info and dr_system_info
             if (data.system_info) {
-                let systemQueryText;
-                let systemValues;
+                let systemQueryText = `
+                    SELECT * FROM system_info WHERE serial_number = $1
+                `;
+                let systemValues = [serialNumber];
 
-                if (data.modality_type === 'CT') {
+                const existingSystem = await client.query(systemQueryText, systemValues);
+                if (existingSystem.rows.length === 0) {
+                    // Insert new system_info
                     systemQueryText = `
-                        SELECT * FROM system_info WHERE serial_number = $1
+                        INSERT INTO system_info (
+                            serial_number, 
+                            angle_range, 
+                            linear_position, 
+                            modality_type
+                        ) VALUES ($1, $2, $3, $4)
                     `;
-                    systemValues = [serialNumber];
+                    await client.query(systemQueryText, [
+                        serialNumber,
+                        data.system_info.angle_range,
+                        data.system_info.linear_position,
+                        data.modality_type
+                    ]);
+                    console.log('Inserted new record into system_info.');
+                } else {
+                    const existingSystemData = existingSystem.rows[0];
+                    const isSystemUpdated = !(
+                        existingSystemData.angle_range === data.system_info.angle_range &&
+                        existingSystemData.linear_position === data.system_info.linear_position
+                    );
 
-                    const existingSystem = await client.query(systemQueryText, systemValues);
-                    if (existingSystem.rows.length === 0) {
-                        // Insert new system_info
-                        const insertSystemText = `
-                            INSERT INTO system_info (
-                                serial_number, 
-                                angle_range, 
-                                linear_position, 
-                                modality_type
-                            ) VALUES ($1, $2, $3, $4)
+                    if (isSystemUpdated) {
+                        const updateSystemText = `
+                            UPDATE system_info SET 
+                                angle_range = $1, 
+                                linear_position = $2 
+                            WHERE serial_number = $3
                         `;
-                        await client.query(insertSystemText, [
-                            serialNumber,
+                        await client.query(updateSystemText, [
                             data.system_info.angle_range,
                             data.system_info.linear_position,
-                            data.modality_type
+                            serialNumber
                         ]);
-                        console.log('Inserted new record into system_info.');
+                        console.log('Updated existing record in system_info.');
                     } else {
-                        // Check for updates in system_info
-                        const existingSystemData = existingSystem.rows[0];
-                        const isSystemUpdated = !(
-                            existingSystemData.angle_range === data.system_info.angle_range &&
-                            existingSystemData.linear_position === data.system_info.linear_position
-                        );
-
-                        if (isSystemUpdated) {
-                            const updateSystemText = `
-                                UPDATE system_info SET 
-                                    angle_range = $1, 
-                                    linear_position = $2 
-                                WHERE serial_number = $3
-                            `;
-                            await client.query(updateSystemText, [
-                                data.system_info.angle_range,
-                                data.system_info.linear_position,
-                                serialNumber
-                            ]);
-                            console.log('Updated existing record in system_info.');
-                        } else {
-                            console.log('No changes detected for system_info. Data not updated.');
-                        }
+                        console.log('No changes detected for system_info. Data not updated.');
                     }
-                } else if (data.modality_type === 'DR') {
-                    systemQueryText = `
+                }
+
+                // Handle dr_system_info
+                if (data.modality_type === 'DR') {
+                    const drSystemQueryText = `
                         SELECT * FROM dr_system_info WHERE serial_number = $1
                     `;
-                    systemValues = [serialNumber];
-
-                    const existingDrSystem = await client.query(systemQueryText, systemValues);
+                    const existingDrSystem = await client.query(drSystemQueryText, [serialNumber]);
                     if (existingDrSystem.rows.length === 0) {
-                        // Insert new dr_system_info
                         const insertDrSystemText = `
                             INSERT INTO dr_system_info (
-                                serial_number, 
-                                linear_position_mm, 
-                                panel_position_mm, 
-                                angle_range_degrees, 
-                                manufacturer, 
+                                serial_number,
+                                linear_position_mm,
+                                panel_position_mm,
+                                angle_range_degrees,
+                                manufacturer,
                                 modality_type
                             ) VALUES ($1, $2, $3, $4, $5, $6)
                         `;
@@ -450,278 +389,163 @@ app.post('/upload', async (req, res) => {
                         ]);
                         console.log('Inserted new record into dr_system_info.');
                     } else {
-                        // Check for updates in dr_system_info
-                        const existingDrSystemData = existingDrSystem.rows[0];
-                        const isDrSystemUpdated = !(
-                            existingDrSystemData.linear_position_mm === data.system_info.linear_position_mm &&
-                            existingDrSystemData.panel_position_mm === data.system_info.panel_position_mm &&
-                            existingDrSystemData.angle_range_degrees === data.system_info.angle_range_degrees &&
-                            existingDrSystemData.manufacturer === data.system_info.manufacturer
-                        );
-
-                        if (isDrSystemUpdated) {
-                            const updateDrSystemText = `
-                                UPDATE dr_system_info SET 
-                                    linear_position_mm = $1, 
-                                    panel_position_mm = $2,
-                                    angle_range_degrees = $3,
-                                    manufacturer = $4 
-                                WHERE serial_number = $5
-                            `;
-                            await client.query(updateDrSystemText, [
-                                data.system_info.linear_position_mm,
-                                data.system_info.panel_position_mm,
-                                data.system_info.angle_range_degrees,
-                                data.system_info.manufacturer,
-                                serialNumber
-                            ]);
-                            console.log('Updated existing record in dr_system_info.');
-                        } else {
-                            console.log('No changes detected for dr_system_info. Data not updated.');
-                        }
+                        console.log('dr_system_info already exists. No changes detected.');
                     }
                 }
             }
 
-            // Handle acquisition_info updates
+            // Handle acquisition_info and dr_acquisition_info
             if (data.acquisition_info) {
-                let acquisitionQueryText;
-                let acquisitionValues;
+                let acquisitionQueryText = `
+                    SELECT * FROM acquisition_info WHERE serial_number = $1
+                `;
+                let acquisitionValues = [serialNumber];
 
-                if (data.modality_type === 'CT') {
+                const existingAcquisition = await client.query(acquisitionQueryText, acquisitionValues);
+                if (existingAcquisition.rows.length === 0) {
+                    // Insert new acquisition_info
                     acquisitionQueryText = `
-                        SELECT * FROM acquisition_info WHERE serial_number = $1
+                        INSERT INTO acquisition_info (
+                            serial_number, 
+                            frame_rate, 
+                            grid_type, 
+                            modality_type
+                        ) VALUES ($1, $2, $3, $4)
                     `;
-                    acquisitionValues = [serialNumber];
+                    await client.query(acquisitionQueryText, [
+                        serialNumber,
+                        data.acquisition_info.frame_rate, 
+                        data.acquisition_info.grid_type,    
+                        data.modality_type
+                    ]);
+                    console.log('Inserted new record into acquisition_info.');
+                } else {
+                    const existingAcquisitionData = existingAcquisition.rows[0];
+                    const isAcquisitionUpdated = !(
+                        existingAcquisitionData.frame_rate === data.acquisition_info.frame_rate &&
+                        existingAcquisitionData.grid_type === data.acquisition_info.grid_type
+                    );
 
-                    const existingAcquisition = await client.query(acquisitionQueryText, acquisitionValues);
-                    if (existingAcquisition.rows.length === 0) {
-                        // Insert new acquisition_info
-                        const insertAcquisitionText = `
-                            INSERT INTO acquisition_info (
-                                serial_number, 
-                                frames_per_run, 
-                                frame_rate_hz, 
-                                modality_type
-                            ) VALUES ($1, $2, $3, $4, $5, $6)
+                    if (isAcquisitionUpdated) {
+                        const updateAcquisitionText = `
+                            UPDATE acquisition_info SET 
+                                frame_rate = $1, 
+                                grid_type = $2 
+                            WHERE serial_number = $3
                         `;
-                        await client.query(insertAcquisitionText, [
-                            serialNumber,
-                            data.acquisition_info.frames_per_run,
-                            data.acquisition_info.frame_rate_hz,
-                            data.modality_type
+                        await client.query(updateAcquisitionText, [
+                            data.acquisition_info.frame_rate,
+                            data.acquisition_info.grid_type,
+                            serialNumber
                         ]);
-                        console.log('Inserted new record into acquisition_info.');
+                        console.log('Updated existing record in acquisition_info.');
                     } else {
-                        // Check for updates in acquisition_info
-                        const existingAcquisitionData = existingAcquisition.rows[0];
-                        const isAcquisitionUpdated = !(
-                            existingAcquisitionData.frames_per_run === data.acquisition_info.frames_per_run &&
-                            existingAcquisitionData.frame_rate_hz === data.acquisition_info.frame_rate_hz
-                        );
-
-                        if (isAcquisitionUpdated) {
-                            const updateAcquisitionText = `
-                                UPDATE acquisition_info SET 
-                                    frames_per_run = $3,
-                                    frame_rate_hz = $4 
-                                WHERE serial_number = $5
-                            `;
-                            await client.query(updateAcquisitionText, [
-                                data.acquisition_info.frames_per_run,
-                                data.acquisition_info.frame_rate_hz,
-                                serialNumber
-                            ]);
-                            console.log('Updated existing record in acquisition_info.');
-                        } else {
-                            console.log('No changes detected for acquisition_info. Data not updated.');
-                        }
+                        console.log('No changes detected for acquisition_info. Data not updated.');
                     }
-                } else if (data.modality_type === 'DR') {
-                    acquisitionQueryText = `
+                }
+
+                // Handle dr_acquisition_info
+                if (data.modality_type === 'DR') {
+                    const drAcquisitionQueryText = `
                         SELECT * FROM dr_acquisition_info WHERE serial_number = $1
                     `;
-                    acquisitionValues = [serialNumber];
-
-                    const existingDrAcquisition = await client.query(acquisitionQueryText, acquisitionValues);
+                    const existingDrAcquisition = await client.query(drAcquisitionQueryText, [serialNumber]);
                     if (existingDrAcquisition.rows.length === 0) {
-                        // Insert new dr_acquisition_info
                         const insertDrAcquisitionText = `
                             INSERT INTO dr_acquisition_info (
                                 serial_number,
-                                frames_per_run, 
-                                frame_rate_hz, 
+                                anti_scatter_grid,
+                                binning,
+                                frames_per_run,
+                                frame_rate_hz,
                                 modality_type
                             ) VALUES ($1, $2, $3, $4, $5, $6)
                         `;
                         await client.query(insertDrAcquisitionText, [
                             serialNumber,
+                            data.acquisition_info.anti_scatter_grid,
+                            data.acquisition_info.binning,
                             data.acquisition_info.frames_per_run,
                             data.acquisition_info.frame_rate_hz,
                             data.modality_type
                         ]);
                         console.log('Inserted new record into dr_acquisition_info.');
                     } else {
-                        // Check for updates in dr_acquisition_info
-                        const existingDrAcquisitionData = existingDrAcquisition.rows[0];
-                        const isDrAcquisitionUpdated = !(
-                            existingDrAcquisitionData.frames_per_run === data.acquisition_info.frames_per_run &&
-                            existingDrAcquisitionData.frame_rate_hz === data.acquisition_info.frame_rate_hz
-                        );
-
-                        if (isDrAcquisitionUpdated) {
-                            const updateDrAcquisitionText = `
-                                UPDATE dr_acquisition_info SET 
-                                    frames_per_run = $3,
-                                    frame_rate_hz = $4 
-                                WHERE serial_number = $5
-                            `;
-                            await client.query(updateDrAcquisitionText, [
-                                data.acquisition_info.frames_per_run,
-                                data.acquisition_info.frame_rate_hz,
-                                serialNumber
-                            ]);
-                            console.log('Updated existing record in dr_acquisition_info.');
-                        } else {
-                            console.log('No changes detected for dr_acquisition_info. Data not updated.');
-                        }
+                        console.log('dr_acquisition_info already exists. No changes detected.');
                     }
                 }
             }
 
-            // Handle patient_info updates
-            if (data.patient_info) {
-                let patientQueryText;
-                let patientValues;
+            // Handle reconstruction_info
+            if (data.reconstruction_info) {
+                let reconstructionQueryText = `
+                    SELECT * FROM reconstruction_info WHERE serial_number = $1
+                `;
+                let reconstructionValues = [serialNumber];
 
-                if (data.modality_type === 'CT') {
-                    patientQueryText = `
-                        SELECT * FROM patient_info WHERE serial_number = $1
+                const existingReconstruction = await client.query(reconstructionQueryText, reconstructionValues);
+                if (existingReconstruction.rows.length === 0) {
+                    // Insert new reconstruction_info
+                    reconstructionQueryText = `
+                        INSERT INTO reconstruction_info (
+                            serial_number, 
+                            algorithm, 
+                            kernel_type, 
+                            total_stacks, 
+                            modality_type
+                        ) VALUES ($1, $2, $3, $4, $5)
                     `;
-                    patientValues = [serialNumber];
+                    await client.query(reconstructionQueryText, [
+                        serialNumber,
+                        data.reconstruction_info.algorithm,
+                        data.reconstruction_info.kernel_type,
+                        data.reconstruction_info.total_stacks,
+                        data.modality_type
+                    ]);
+                    console.log('Inserted new record into reconstruction_info.');
+                } else {
+                    const existingReconstructionData = existingReconstruction.rows[0];
+                    const isReconstructionUpdated = !(
+                        existingReconstructionData.algorithm === data.reconstruction_info.algorithm &&
+                        existingReconstructionData.kernel_type === data.reconstruction_info.kernel_type &&
+                        existingReconstructionData.total_stacks === data.reconstruction_info.total_stacks
+                    );
 
-                    const existingPatient = await client.query(patientQueryText, patientValues);
-                    if (existingPatient.rows.length === 0) {
-                        // Insert new patient_info
-                        const insertPatientText = `
-                            INSERT INTO patient_info (
-                                serial_number, 
-                                position, 
-                                size_kg, 
-                                target, 
-                                modality_type
-                            ) VALUES ($1, $2, $3, $4, $5)
+                    if (isReconstructionUpdated) {
+                        const updateReconstructionText = `
+                            UPDATE reconstruction_info SET 
+                                algorithm = $1, 
+                                kernel_type = $2, 
+                                total_stacks = $3 
+                            WHERE serial_number = $4
                         `;
-                        await client.query(insertPatientText, [
-                            serialNumber,
-                            data.patient_info.position,
-                            data.patient_info.size_kg,
-                            data.patient_info.target,
-                            data.modality_type
+                        await client.query(updateReconstructionText, [
+                            data.reconstruction_info.algorithm,
+                            data.reconstruction_info.kernel_type,
+                            data.reconstruction_info.total_stacks,
+                            serialNumber
                         ]);
-                        console.log('Inserted new record into patient_info.');
+                        console.log('Updated existing record in reconstruction_info.');
                     } else {
-                        // Check for updates in patient_info
-                        const existingPatientData = existingPatient.rows[0];
-                        const isPatientUpdated = !(
-                            existingPatientData.position === data.patient_info.position &&
-                            existingPatientData.size_kg === data.patient_info.size_kg &&
-                            existingPatientData.target === data.patient_info.target
-                        );
-
-                        if (isPatientUpdated) {
-                            const updatePatientText = `
-                                UPDATE patient_info SET 
-                                    position = $1, 
-                                    size_kg = $2,
-                                    target = $3 
-                                WHERE serial_number = $4
-                            `;
-                            await client.query(updatePatientText, [
-                                data.patient_info.position,
-                                data.patient_info.size_kg,
-                                data.patient_info.target,
-                                serialNumber
-                            ]);
-                            console.log('Updated existing record in patient_info.');
-                        } else {
-                            console.log('No changes detected for patient_info. Data not updated.');
-                        }
-                    }
-                } else if (data.modality_type === 'DR') {
-                    patientQueryText = `
-                        SELECT * FROM dr_patient_info WHERE serial_number = $1
-                    `;
-                    patientValues = [serialNumber];
-
-                    const existingDrPatient = await client.query(patientQueryText, patientValues);
-                    if (existingDrPatient.rows.length === 0) {
-                        // Insert new dr_patient_info
-                        const insertDrPatientText = `
-                            INSERT INTO dr_patient_info (
-                                serial_number, 
-                                position, 
-                                size_kg, 
-                                target, 
-                                modality_type
-                            ) VALUES ($1, $2, $3, $4, $5)
-                        `;
-                        await client.query(insertDrPatientText, [
-                            serialNumber,
-                            data.patient_info.position,
-                            data.patient_info.size_kg,
-                            data.patient_info.target,
-                            data.modality_type
-                        ]);
-                        console.log('Inserted new record into dr_patient_info.');
-                    } else {
-                        // Check for updates in dr_patient_info
-                        const existingDrPatientData = existingDrPatient.rows[0];
-                        const isDrPatientUpdated = !(
-                            existingDrPatientData.position === data.patient_info.position &&
-                            existingDrPatientData.size_kg === data.patient_info.size_kg &&
-                            existingDrPatientData.target === data.patient_info.target
-                        );
-
-                        if (isDrPatientUpdated) {
-                            const updateDrPatientText = `
-                                UPDATE dr_patient_info SET 
-                                    position = $1, 
-                                    size_kg = $2,
-                                    target = $3 
-                                WHERE serial_number = $4
-                            `;
-                            await client.query(updateDrPatientText, [
-                                data.patient_info.position,
-                                data.patient_info.size_kg,
-                                data.patient_info.target,
-                                serialNumber
-                            ]);
-                            console.log('Updated existing record in dr_patient_info.');
-                        } else {
-                            console.log('No changes detected for dr_patient_info. Data not updated.');
-                        }
+                        console.log('No changes detected for reconstruction_info. Data not updated.');
                     }
                 }
             }
 
-            // Commit the transaction
             await client.query('COMMIT');
-            console.log('Transaction committed.');
-            res.status(200).send('Data processed successfully');
+            res.status(200).send('Data processed successfully.');
         } catch (error) {
-            console.error('Error during transaction:', error);
             await client.query('ROLLBACK');
+            console.error('Transaction error:', error);
             res.status(500).send('Internal Server Error');
         } finally {
             client.release();
         }
     } catch (error) {
-        console.error('Error in /upload endpoint:', error);
+        console.error('Error in /upload route:', error);
         res.status(500).send('Internal Server Error');
     }
 });
-
 
 // Start the server
 app.listen(PORT, () => {
